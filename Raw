@@ -14,29 +14,74 @@ local ADMINS_EXTRA = {
     -- ["nomedoadmin2"] = true,
 }
 
+local tempoAdminTemporario = nil -- timestamp (os.time()) quando expira o admin de 1h
+local AdminWinRef = nil
+local AdminUIRef = nil
+local adminExpiradoNotificado = false
+
+local function pedirHttp(dados)
+    local req = (syn and syn.request) or (http and http.request) or request or (fluxus and fluxus.request)
+    return type(req) == "function" and req(dados) or nil
+end
+
+local function buscarAdminTemporarioNoFirebase(userId)
+    local ok, res = pcall(function()
+        return pedirHttp({
+            Url = LINK_BANCO .. "/adminsTemporarios/" .. tostring(userId) .. ".json",
+            Method = "GET"
+        })
+    end)
+
+    if ok and res and res.Body and res.Body ~= "" and res.Body ~= "null" then
+        local decOk, dados = pcall(function()
+            return HttpService:JSONDecode(res.Body)
+        end)
+        if decOk and type(dados) == "table" and type(dados.expiraEm) == "number" then
+            if os.time() < dados.expiraEm then
+                return dados.expiraEm
+            end
+        end
+    end
+    return nil
+end
+
+local function hasTemporaryAdminActive()
+    if type(tempoAdminTemporario) == "number" then
+        if os.time() < tempoAdminTemporario then
+            return true
+        else
+            tempoAdminTemporario = nil
+        end
+    end
+    return false
+end
+
+local function isLocalAdminOrOwner()
+    local n = string.lower(tostring(LP.Name))
+    local d = string.lower(tostring(LP.DisplayName))
+    if n == "luccasxtt" or d == "luccasxtt" or ADMINS_EXTRA[n] or ADMINS_EXTRA[d] == true then
+        return true
+    end
+    return hasTemporaryAdminActive()
+end
+
 local function getRoleTag(player)
     if not player then return "USUÁRIO FREE" end
     local n = string.lower(tostring(player.Name))
     local d = string.lower(tostring(player.DisplayName))
     if n == "luccasxtt" or d == "luccasxtt" then
         return "OWNER"
-    elseif ADMINS_EXTRA[n] or ADMINS_EXTRA[d] then
+    elseif ADMINS_EXTRA[n] or ADMINS_EXTRA[d] == true then
+        return "USUÁRIO ADMIN"
+    elseif player == LP and hasTemporaryAdminActive() then
         return "USUÁRIO ADMIN"
     else
         return "USUÁRIO FREE"
     end
 end
 
-local function isLocalAdminOrOwner()
-    local n = string.lower(tostring(LP.Name))
-    local d = string.lower(tostring(LP.DisplayName))
-    return (n == "luccasxtt" or d == "luccasxtt" or ADMINS_EXTRA[n] or ADMINS_EXTRA[d] == true)
-end
-
-local function pedirHttp(dados)
-    local req = (syn and syn.request) or (http and http.request) or request or (fluxus and fluxus.request)
-    return type(req) == "function" and req(dados) or nil
-end
+-- Carrega no início se o jogador local tem admin temporário ativo
+tempoAdminTemporario = buscarAdminTemporarioNoFirebase(LP.UserId)
 
 -- ─── CONTROLE DE QUEM ESTÁ USANDO O SCRIPT ────────────────
 local activeScriptUsers = {} -- [tostring(UserId)] = true
@@ -164,10 +209,36 @@ end
 
 configurarTagsDeJogadores()
 
--- Loop de presença e sincronização de quem está usando o script
+-- Loop de presença, expiração do admin temporário e sincronização
 task.spawn(function()
     registrarPresencaNoScript()
     while task.wait(5) do
+        -- Verifica se o admin temporário de 1h acabou
+        if type(tempoAdminTemporario) == "number" and os.time() >= tempoAdminTemporario then
+            tempoAdminTemporario = nil
+            pcall(function()
+                if AdminWinRef then
+                    if type(AdminWinRef.Destroy) == "function" then
+                        AdminWinRef:Destroy()
+                    elseif type(AdminWinRef.Close) == "function" then
+                        AdminWinRef:Close()
+                    end
+                    AdminWinRef = nil
+                end
+            end)
+            if not adminExpiradoNotificado then
+                adminExpiradoNotificado = true
+                pcall(function()
+                    WindUI:Notify({
+                        Title = "Admin Expirado",
+                        Content = "Seu tempo de admin acabou. Voltou para USUÁRIO FREE.",
+                        Icon = "clock",
+                        Duration = 5
+                    })
+                end)
+            end
+        end
+
         registrarPresencaNoScript()
 
         local ok, resposta = pcall(function()
@@ -503,80 +574,4 @@ MusicTab:Button({
             local sound = boombox:FindFirstChildWhichIsA("Sound", true)
             if sound then sound:Stop() end
             local RE = game:GetService("ReplicatedStorage"):FindFirstChild("RE")
-            local remote = RE and RE:FindFirstChild("PlayerToolEvent")
-            if remote then pcall(function() remote:FireServer("ToolMusicText", "", nil, true) end) end
-        else
-            WindUI:Notify({ Title = "Erro", Content = "Equipe a Boombox na mão!", Icon = "x", Duration = 4 })
-        end
-    end,
-})
-
-local SecurityTab = Window:Tab({ Title = "Segurança", Icon = "shield" })
-SecurityTab:Toggle({
-    Title = "Anti Sit (Bloqueio Total)",
-    Desc = "Impede que qualquer script ou tool te sente.",
-    Value = false,
-    Callback = function(Value)
-        antiSitEnabled = Value
-        WindUI:Notify({
-            Title = "Segurança",
-            Content = Value and "Anti Sit BLINDADO ATIVADO." or "Anti Sit DESATIVADO.",
-            Icon = Value and "shield" or "shield-off",
-            Duration = 3
-        })
-    end,
-})
-
-Window:SelectTab(1)
-
--- ─── WINDUI ADMIN DO ZERO (SÓ PARA ADMIN) ────────────────────
-if isLocalAdminOrOwner() then
-    WindUI:Notify({
-        Title = "Admin",
-        Content = "permissão admin concedida",
-        Icon = "shield-check",
-        Duration = 5
-    })
-
-    local AdminUI = loadstring(game:HttpGet("https://github.com/Footagesus/WindUI/releases/latest/download/main.lua"))()
-
-    local AdminWin = AdminUI:CreateWindow({
-        Title = "Brocasitx Admin",
-        Icon = "skull",
-        Folder = "BrocasitxAdminZero",
-        Size = UDim2.fromOffset(480, 360),
-        Transparent = true,
-        Theme = "Dark",
-    })
-
-    local AdminMainTab = AdminWin:Tab({ Title = "Admin", Icon = "shield-alert" })
-    local playersInMap, playerMapNames = {}, {}
-    local selectedTarget = nil
-
-    local function getListaJogadores()
-        local mapa, nomes = {}, {}
-        for _, p in ipairs(Players:GetPlayers()) do
-            if p ~= LP then
-                mapa[p.Name] = p
-                table.insert(nomes, p.Name)
-            end
-        end
-        table.sort(nomes)
-        return mapa, nomes
-    end
-
-    playersInMap, playerMapNames = getListaJogadores()
-
-    local TargetDropdown = AdminMainTab:Dropdown({
-        Title = "Escolher Alvo",
-        Values = playerMapNames,
-        Callback = function(opt) selectedTarget = playersInMap[opt] end,
-    })
-
-    AdminMainTab:Button({
-        Title = "Atualizar Lista",
-        Callback = function()
-            playersInMap, playerMapNames = getListaJogadores()
-            if selectedTarget and not playersInMap[selectedTarget.Name] then
-                selectedTarget = nil
-          
+            local remote = RE and RE:FindFirstChild("PlayerToolEv
