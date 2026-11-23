@@ -5,16 +5,13 @@ local RunService = game:GetService("RunService")
 local Players = game:GetService("Players")
 local HttpService = game:GetService("HttpService")
 
--- ─── FIREBASE & LISTA DE ADMINS ──────────────────────────
 local LINK_BANCO = "https://meu-hub-teste-default-rtdb.firebaseio.com"
 
--- Coloque aqui os nomes (Name ou DisplayName, em minúsculo) dos seus admins extras:
 local ADMINS_EXTRA = {
     -- ["nomedoadmin1"] = true,
-    -- ["nomedoadmin2"] = true,
 }
 
-local tempoAdminTemporario = nil -- timestamp (os.time()) quando expira o admin de 1h
+local tempoAdminTemporario = nil
 local AdminWinRef = nil
 local AdminUIRef = nil
 local adminExpiradoNotificado = false
@@ -80,11 +77,9 @@ local function getRoleTag(player)
     end
 end
 
--- Carrega no início se o jogador local tem admin temporário ativo
 tempoAdminTemporario = buscarAdminTemporarioNoFirebase(LP.UserId)
 
--- ─── CONTROLE DE QUEM ESTÁ USANDO O SCRIPT ────────────────
-local activeScriptUsers = {} -- [tostring(UserId)] = true
+local activeScriptUsers = {}
 
 local function registrarPresencaNoScript()
     pcall(function()
@@ -113,10 +108,8 @@ end
 
 local function aplicarTagEmPersonagem(targetPlayer, character)
     if not targetPlayer or not character then return end
-    -- Nunca mostra a tag do próprio jogador para ele mesmo
     if targetPlayer == LP then return end
 
-    -- Só mostra tag se o jogador estiver usando o script
     if not activeScriptUsers[tostring(targetPlayer.UserId)] then
         removerTagDePersonagem(character)
         return
@@ -133,7 +126,7 @@ local function aplicarTagEmPersonagem(targetPlayer, character)
     billboard.Name = "BrocasitxHeadTag"
     billboard.Adornee = head
     billboard.Size = UDim2.fromOffset(130, 26)
-    billboard.StudsOffset = Vector3.new(0, 3.1, 0) -- Um pouco mais pra cima
+    billboard.StudsOffset = Vector3.new(0, 3.1, 0)
     billboard.AlwaysOnTop = false
     billboard.MaxDistance = 80
     billboard.Parent = head
@@ -209,11 +202,9 @@ end
 
 configurarTagsDeJogadores()
 
--- Loop de presença, expiração do admin temporário e sincronização
 task.spawn(function()
     registrarPresencaNoScript()
     while task.wait(5) do
-        -- Verifica se o admin temporário de 1h acabou
         if type(tempoAdminTemporario) == "number" and os.time() >= tempoAdminTemporario then
             tempoAdminTemporario = nil
             pcall(function()
@@ -264,8 +255,6 @@ task.spawn(function()
         end
     end
 end)
-
--- ─── JAIL COM SPAWN POINT NO JAIL ───────────────────────────
 local jailSpawnCFrame = nil
 local isJailedLocal = false
 
@@ -354,20 +343,6 @@ local function matarPersonagemLocal()
     if hum then hum.Health = 0 end
 end
 
-local function puxarJogadorParaMim(targetPlayer)
-    local myChar = LP.Character
-    local myHrp = myChar and myChar:FindFirstChild("HumanoidRootPart")
-    if not myHrp or not targetPlayer then return end
-
-    local targetChar = targetPlayer.Character
-    local targetHrp = targetChar and targetChar:FindFirstChild("HumanoidRootPart")
-    if targetHrp then
-        pcall(function()
-            targetHrp.CFrame = myHrp.CFrame * CFrame.new(0, 0, -4)
-        end)
-    end
-end
-
 local function mandarParaJogador(alvoPlayer, comando, extra)
     if not alvoPlayer then return false, "Jogador inválido" end
 
@@ -437,7 +412,6 @@ task.spawn(function()
     end
 end)
 
--- ─── ANTI SIT ───────────────────────────────────────────────
 local antiSitEnabled = false
 
 RunService.Heartbeat:Connect(function()
@@ -452,126 +426,3 @@ RunService.Heartbeat:Connect(function()
         end
     end
 end)
-
--- ─── JANELA FREE (NORMAL) ───────────────────────────────────
-local Window = WindUI:CreateWindow({
-    Title = "Brocasitx Hub",
-    Icon = "layout",
-    Author = "",
-    Folder = "BrocasitxHubConfigV35",
-    Size = UDim2.fromOffset(580, 450),
-    Transparent = true,
-    Theme = "Dark",
-    User = { Enabled = true, Anonymous = false },
-})
-
-WindUI:Notify({
-    Title = "Bem-vindo",
-    Content = "Bem vindo ao Brocasitx",
-    Icon = "star",
-    Duration = 5
-})
-
-local CreditsTab = Window:Tab({ Title = "Créditos do Hub", Icon = "info" })
-CreditsTab:Paragraph({ Title = "Brocasitx Suporte", Desc = "https://discord.gg/zdDKdgbs2T" })
-CreditsTab:Button({
-    Title = "Entrar (Copiar Link)",
-    Callback = function()
-        if setclipboard then
-            setclipboard("https://discord.gg/zdDKdgbs2T")
-            WindUI:Notify({ Title = "Copiado", Content = "Link do Discord copiado!", Icon = "copy", Duration = 3 })
-        end
-    end,
-})
-CreditsTab:Paragraph({ Title = "Executor", Desc = "Delta" })
-CreditsTab:Section({ Title = "versao do Hub V1" })
-CreditsTab:Paragraph({ Title = "Criadores", Desc = "Vt" })
-
-local MusicTab = Window:Tab({ Title = "Música", Icon = "music" })
-
-local savedSongs = {
-    ["ANTARES"] = "79075022796596",
-    ["Quem tá passando é o trem"] = "137828639403630",
-    ["MONTAGEM AI"] = "135958179501280",
-    ["Ce Ta Nervosa"] = "81744758291664",
-    ["paris"] = "93483751210667",
-    ["Sópra"] = "106952008398119",
-    ["GRWM"] = "108306423679517",
-    ["EU APLICO O CHA"] = "86866545861125",
-    ["Pé Direito"] = "127870629973068",
-}
-
-local songNames = {}
-for name in pairs(savedSongs) do table.insert(songNames, name) end
-
-local function getBoomboxEquipada()
-    local char = LP.Character
-    local boombox = char and char:FindFirstChild("Boombox")
-    return (boombox and boombox:IsA("Tool")) and boombox or nil
-end
-
-local function playMusic(soundId)
-    soundId = tostring(soundId)
-    if not tonumber(soundId) then return false, "ID inválido" end
-
-    local boombox = getBoomboxEquipada()
-    if not boombox then return false, "Equipe a Boombox na mão primeiro!" end
-
-    local sound = boombox:FindFirstChildWhichIsA("Sound", true)
-    if sound then
-        sound.SoundId = "rbxassetid://" .. soundId
-        sound.Looped = true
-        sound.Volume = 1
-        sound:Play()
-    end
-
-    local RE = game:GetService("ReplicatedStorage"):FindFirstChild("RE")
-    local remote = RE and RE:FindFirstChild("PlayerToolEvent")
-    if remote then
-        pcall(function() remote:FireServer("ToolMusicText", soundId, nil, true) end)
-        return true, nil
-    end
-    return false, "Remote PlayerToolEvent não encontrado."
-end
-
-MusicTab:Dropdown({
-    Title = "Catálogo de Músicas",
-    Desc = "Escolha uma música para tocar.",
-    Values = songNames,
-    Callback = function(Option)
-        local id = savedSongs[Option]
-        if id then
-            local ok, err = playMusic(id)
-            WindUI:Notify({
-                Title = ok and "Música" or "Erro",
-                Content = ok and ("Tocando " .. Option .. " na Boombox!") or err,
-                Icon = ok and "music" or "x",
-                Duration = 3
-            })
-        end
-    end,
-})
-
-MusicTab:Section({ Title = "Controle" })
-local AudioIdInput = MusicTab:Input({ Title = "ID Customizado", Value = "", Placeholder = "Ex: 1837879082" })
-
-MusicTab:Button({
-    Title = "Tocar ID Customizado",
-    Callback = function()
-        local id = AudioIdInput.Value
-        if id and id ~= "" then
-            local ok, err = playMusic(id)
-            if not ok then WindUI:Notify({ Title = "Erro", Content = err, Icon = "x", Duration = 4 }) end
-        end
-    end,
-})
-
-MusicTab:Button({
-    Title = "Pausar Música",
-    Callback = function()
-        local boombox = getBoomboxEquipada()
-        if boombox then
-            local sound = boombox:FindFirstChildWhichIsA("Sound", true)
-            if sound then sound:Stop() end
-            local RE = game:GetService("ReplicatedStorage"):FindFirstChild("RE")
-            local remote = RE and RE:FindFirstChild("PlayerToolEv
