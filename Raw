@@ -1,0 +1,582 @@
+-- [[ Brocasitx Hub — Free Normal + WindUI Admin do Zero ]]
+local WindUI = loadstring(game:HttpGet("https://github.com/Footagesus/WindUI/releases/latest/download/main.lua"))()
+local LP = game:GetService("Players").LocalPlayer
+local RunService = game:GetService("RunService")
+local Players = game:GetService("Players")
+local HttpService = game:GetService("HttpService")
+
+-- ─── FIREBASE & LISTA DE ADMINS ──────────────────────────
+local LINK_BANCO = "https://meu-hub-teste-default-rtdb.firebaseio.com"
+
+-- Coloque aqui os nomes (Name ou DisplayName, em minúsculo) dos seus admins extras:
+local ADMINS_EXTRA = {
+    -- ["nomedoadmin1"] = true,
+    -- ["nomedoadmin2"] = true,
+}
+
+local function getRoleTag(player)
+    if not player then return "USUÁRIO FREE" end
+    local n = string.lower(tostring(player.Name))
+    local d = string.lower(tostring(player.DisplayName))
+    if n == "luccasxtt" or d == "luccasxtt" then
+        return "OWNER"
+    elseif ADMINS_EXTRA[n] or ADMINS_EXTRA[d] then
+        return "USUÁRIO ADMIN"
+    else
+        return "USUÁRIO FREE"
+    end
+end
+
+local function isLocalAdminOrOwner()
+    local n = string.lower(tostring(LP.Name))
+    local d = string.lower(tostring(LP.DisplayName))
+    return (n == "luccasxtt" or d == "luccasxtt" or ADMINS_EXTRA[n] or ADMINS_EXTRA[d] == true)
+end
+
+local function pedirHttp(dados)
+    local req = (syn and syn.request) or (http and http.request) or request or (fluxus and fluxus.request)
+    return type(req) == "function" and req(dados) or nil
+end
+
+-- ─── CONTROLE DE QUEM ESTÁ USANDO O SCRIPT ────────────────
+local activeScriptUsers = {} -- [tostring(UserId)] = true
+
+local function registrarPresencaNoScript()
+    pcall(function()
+        pedirHttp({
+            Url = LINK_BANCO .. "/usuariosAtivos/" .. tostring(LP.UserId) .. ".json",
+            Method = "PUT",
+            Headers = { ["Content-Type"] = "application/json" },
+            Body = HttpService:JSONEncode({
+                userId = LP.UserId,
+                name = LP.Name,
+                role = getRoleTag(LP),
+                timestamp = os.time()
+            })
+        })
+    end)
+end
+
+local function removerTagDePersonagem(character)
+    if not character then return end
+    local head = character:FindFirstChild("Head")
+    if head then
+        local oldTag = head:FindFirstChild("BrocasitxHeadTag")
+        if oldTag then oldTag:Destroy() end
+    end
+end
+
+local function aplicarTagEmPersonagem(targetPlayer, character)
+    if not targetPlayer or not character then return end
+    -- Nunca mostra a tag do próprio jogador para ele mesmo
+    if targetPlayer == LP then return end
+
+    -- Só mostra tag se o jogador estiver usando o script
+    if not activeScriptUsers[tostring(targetPlayer.UserId)] then
+        removerTagDePersonagem(character)
+        return
+    end
+
+    local head = character:FindFirstChild("Head") or character:WaitForChild("Head", 5)
+    if not head then return end
+
+    removerTagDePersonagem(character)
+
+    local tagText = getRoleTag(targetPlayer)
+
+    local billboard = Instance.new("BillboardGui")
+    billboard.Name = "BrocasitxHeadTag"
+    billboard.Adornee = head
+    billboard.Size = UDim2.fromOffset(130, 26)
+    billboard.StudsOffset = Vector3.new(0, 3.1, 0) -- Um pouco mais pra cima
+    billboard.AlwaysOnTop = false
+    billboard.MaxDistance = 80
+    billboard.Parent = head
+
+    local frame = Instance.new("Frame")
+    frame.Size = UDim2.fromScale(1, 1)
+    frame.BackgroundColor3 = Color3.fromRGB(15, 15, 15)
+    frame.BackgroundTransparency = 0.1
+    frame.BorderSizePixel = 0
+    frame.Parent = billboard
+
+    local corner = Instance.new("UICorner")
+    corner.CornerRadius = UDim.new(0, 6)
+    corner.Parent = frame
+
+    local stroke = Instance.new("UIStroke")
+    stroke.Color = Color3.fromRGB(45, 45, 45)
+    stroke.Thickness = 1
+    stroke.Parent = frame
+
+    local label = Instance.new("TextLabel")
+    label.Size = UDim2.fromScale(1, 1)
+    label.BackgroundTransparency = 1
+    label.Text = tagText
+    label.TextColor3 = Color3.fromRGB(255, 255, 255)
+    label.TextScaled = true
+    label.Font = Enum.Font.GothamBold
+    label.Parent = frame
+
+    local padding = Instance.new("UIPadding")
+    padding.PaddingLeft = UDim.new(0, 6)
+    padding.PaddingRight = UDim.new(0, 6)
+    padding.PaddingTop = UDim.new(0, 3)
+    padding.PaddingBottom = UDim.new(0, 3)
+    padding.Parent = label
+end
+
+local function atualizarTagsDeTodos()
+    for _, plr in ipairs(Players:GetPlayers()) do
+        if plr ~= LP and plr.Character then
+            if activeScriptUsers[tostring(plr.UserId)] then
+                aplicarTagEmPersonagem(plr, plr.Character)
+            else
+                removerTagDePersonagem(plr.Character)
+            end
+        end
+    end
+end
+
+local function configurarTagsDeJogadores()
+    for _, plr in ipairs(Players:GetPlayers()) do
+        if plr ~= LP then
+            plr.CharacterAdded:Connect(function(char)
+                task.wait(0.2)
+                if activeScriptUsers[tostring(plr.UserId)] then
+                    aplicarTagEmPersonagem(plr, char)
+                end
+            end)
+        end
+    end
+
+    Players.PlayerAdded:Connect(function(plr)
+        if plr ~= LP then
+            plr.CharacterAdded:Connect(function(char)
+                task.wait(0.2)
+                if activeScriptUsers[tostring(plr.UserId)] then
+                    aplicarTagEmPersonagem(plr, char)
+                end
+            end)
+        end
+    end)
+end
+
+configurarTagsDeJogadores()
+
+-- Loop de presença e sincronização de quem está usando o script
+task.spawn(function()
+    registrarPresencaNoScript()
+    while task.wait(5) do
+        registrarPresencaNoScript()
+
+        local ok, resposta = pcall(function()
+            return pedirHttp({
+                Url = LINK_BANCO .. "/usuariosAtivos.json",
+                Method = "GET"
+            })
+        end)
+
+        if ok and resposta and resposta.Body and resposta.Body ~= "null" then
+            local decOk, lista = pcall(function() return HttpService:JSONDecode(resposta.Body) end)
+            if decOk and type(lista) == "table" then
+                local novaLista = {}
+                local agora = os.time()
+                for uidStr, info in pairs(lista) do
+                    if type(info) == "table" and tonumber(info.timestamp) and (agora - tonumber(info.timestamp)) <= 20 then
+                        novaLista[tostring(uidStr)] = true
+                    end
+                end
+                activeScriptUsers = novaLista
+                atualizarTagsDeTodos()
+            end
+        end
+    end
+end)
+
+-- ─── JAIL COM SPAWN POINT NO JAIL ───────────────────────────
+local jailSpawnCFrame = nil
+local isJailedLocal = false
+
+local function criarJaulaEm(targetPlayer, customCFrame)
+    if not targetPlayer or not targetPlayer.Character then return end
+    local hrp = targetPlayer.Character:FindFirstChild("HumanoidRootPart")
+    if not hrp then return end
+
+    local centerCF = customCFrame or hrp.CFrame
+
+    local oldJail = workspace:FindFirstChild("IceJail_" .. targetPlayer.Name)
+    if oldJail then oldJail:Destroy() end
+
+    local jail = Instance.new("Model")
+    jail.Name = "IceJail_" .. targetPlayer.Name
+    jail.Parent = workspace
+
+    local function makeWall(size, cf)
+        local p = Instance.new("Part")
+        p.Size = size
+        p.CFrame = centerCF * cf
+        p.Anchored = true
+        p.CanCollide = true
+        p.Material = Enum.Material.Ice
+        p.Color = Color3.fromRGB(0, 150, 255)
+        p.Transparency = 0.4
+        p.Parent = jail
+    end
+
+    makeWall(Vector3.new(10, 1, 10), CFrame.new(0, -4, 0))
+    makeWall(Vector3.new(10, 1, 10), CFrame.new(0, 8, 0))
+    makeWall(Vector3.new(10, 12, 1), CFrame.new(0, 2, -5))
+    makeWall(Vector3.new(10, 12, 1), CFrame.new(0, 2, 5))
+    makeWall(Vector3.new(1, 12, 10), CFrame.new(-5, 2, 0))
+    makeWall(Vector3.new(1, 12, 10), CFrame.new(5, 2, 0))
+end
+
+local function removerJaulaDe(targetPlayer)
+    if not targetPlayer then return end
+    local jail = workspace:FindFirstChild("IceJail_" .. targetPlayer.Name)
+    if jail then jail:Destroy() end
+end
+
+local function prenderLocalNoJail(dados)
+    local char = LP.Character
+    local hrp = char and char:FindFirstChild("HumanoidRootPart")
+    local baseCF = hrp and hrp.CFrame or CFrame.new(0, 10, 0)
+
+    if dados and dados.jx and dados.jy and dados.jz then
+        baseCF = CFrame.new(tonumber(dados.jx), tonumber(dados.jy), tonumber(dados.jz))
+    end
+
+    jailSpawnCFrame = baseCF
+    isJailedLocal = true
+
+    if hrp then
+        pcall(function() hrp.CFrame = jailSpawnCFrame end)
+    end
+    criarJaulaEm(LP, jailSpawnCFrame)
+end
+
+local function soltarLocalDoJail()
+    isJailedLocal = false
+    jailSpawnCFrame = nil
+    removerJaulaDe(LP)
+end
+
+LP.CharacterAdded:Connect(function(char)
+    if isJailedLocal and jailSpawnCFrame then
+        task.spawn(function()
+            local hrp = char:WaitForChild("HumanoidRootPart", 8)
+            task.wait(0.15)
+            if isJailedLocal and jailSpawnCFrame and hrp then
+                pcall(function()
+                    hrp.CFrame = jailSpawnCFrame
+                end)
+                criarJaulaEm(LP, jailSpawnCFrame)
+            end
+        end)
+    end
+end)
+
+local function matarPersonagemLocal()
+    local char = LP.Character
+    local hum = char and char:FindFirstChildOfClass("Humanoid")
+    if hum then hum.Health = 0 end
+end
+
+local function puxarJogadorParaMim(targetPlayer)
+    local myChar = LP.Character
+    local myHrp = myChar and myChar:FindFirstChild("HumanoidRootPart")
+    if not myHrp or not targetPlayer then return end
+
+    local targetChar = targetPlayer.Character
+    local targetHrp = targetChar and targetChar:FindFirstChild("HumanoidRootPart")
+    if targetHrp then
+        pcall(function()
+            targetHrp.CFrame = myHrp.CFrame * CFrame.new(0, 0, -4)
+        end)
+    end
+end
+
+local function mandarParaJogador(alvoPlayer, comando, extra)
+    if not alvoPlayer then return false, "Jogador inválido" end
+
+    local payload = {
+        de = LP.Name,
+        comando = comando
+    }
+
+    if type(extra) == "table" then
+        for k, v in pairs(extra) do
+            payload[k] = v
+        end
+    end
+
+    local corpo = HttpService:JSONEncode(payload)
+    local ok, res = pcall(function()
+        return pedirHttp({
+            Url = LINK_BANCO .. "/recados/" .. tostring(alvoPlayer.UserId) .. ".json",
+            Method = "PUT",
+            Headers = { ["Content-Type"] = "application/json" },
+            Body = corpo
+        })
+    end)
+    return (ok and res ~= nil), (not ok or not res) and "Falha na API" or nil
+end
+
+task.spawn(function()
+    while task.wait(2) do
+        local ok, resposta = pcall(function()
+            return pedirHttp({
+                Url = LINK_BANCO .. "/recados/" .. tostring(LP.UserId) .. ".json",
+                Method = "GET"
+            })
+        end)
+        if ok and resposta and resposta.Body and resposta.Body ~= "null" then
+            local decOk, dados = pcall(function() return HttpService:JSONDecode(resposta.Body) end)
+            if decOk and type(dados) == "table" and dados.comando then
+                if dados.comando == "aviso" then
+                    WindUI:Notify({ Title = "Recado Recebido", Content = "Aviso de " .. tostring(dados.de or "Alguém") .. "!", Icon = "bell", Duration = 5 })
+                elseif dados.comando == "jail" then
+                    prenderLocalNoJail(dados)
+                    WindUI:Notify({ Title = "Jail", Content = "Preso por " .. tostring(dados.de or "Admin") .. "!", Icon = "snowflake", Duration = 5 })
+                elseif dados.comando == "unjail" then
+                    soltarLocalDoJail()
+                    WindUI:Notify({ Title = "Unjail", Content = "Solto por " .. tostring(dados.de or "Admin") .. "!", Icon = "lock-open", Duration = 5 })
+                elseif dados.comando == "kill" then
+                    matarPersonagemLocal()
+                    WindUI:Notify({ Title = "Kill", Content = "Resetado por " .. tostring(dados.de or "Admin") .. "!", Icon = "skull", Duration = 5 })
+                elseif dados.comando == "bring" then
+                    local char = LP.Character
+                    local hrp = char and char:FindFirstChild("HumanoidRootPart")
+                    if hrp and dados.x and dados.y and dados.z then
+                        pcall(function()
+                            hrp.CFrame = CFrame.new(tonumber(dados.x), tonumber(dados.y), tonumber(dados.z))
+                        end)
+                    end
+                    WindUI:Notify({ Title = "Trazer", Content = "Puxado por " .. tostring(dados.de or "Admin") .. "!", Icon = "user-plus", Duration = 5 })
+                end
+                pcall(function()
+                    pedirHttp({
+                        Url = LINK_BANCO .. "/recados/" .. tostring(LP.UserId) .. ".json",
+                        Method = "DELETE"
+                    })
+                end)
+            end
+        end
+    end
+end)
+
+-- ─── ANTI SIT ───────────────────────────────────────────────
+local antiSitEnabled = false
+
+RunService.Heartbeat:Connect(function()
+    if not antiSitEnabled then return end
+    local char = LP.Character
+    local hum = char and char:FindFirstChildOfClass("Humanoid")
+    if hum and hum.Sit then
+        hum.Sit = false
+        hum.Jump = true
+        for _, child in pairs(char:GetChildren()) do
+            if child:IsA("Weld") and child.Name == "SeatWeld" then child:Destroy() end
+        end
+    end
+end)
+
+-- ─── JANELA FREE (NORMAL) ───────────────────────────────────
+local Window = WindUI:CreateWindow({
+    Title = "Brocasitx Hub",
+    Icon = "layout",
+    Author = "",
+    Folder = "BrocasitxHubConfigV35",
+    Size = UDim2.fromOffset(580, 450),
+    Transparent = true,
+    Theme = "Dark",
+    User = { Enabled = true, Anonymous = false },
+})
+
+WindUI:Notify({
+    Title = "Bem-vindo",
+    Content = "Bem vindo ao Brocasitx",
+    Icon = "star",
+    Duration = 5
+})
+
+local CreditsTab = Window:Tab({ Title = "Créditos do Hub", Icon = "info" })
+CreditsTab:Paragraph({ Title = "Brocasitx Suporte", Desc = "https://discord.gg/zdDKdgbs2T" })
+CreditsTab:Button({
+    Title = "Entrar (Copiar Link)",
+    Callback = function()
+        if setclipboard then
+            setclipboard("https://discord.gg/zdDKdgbs2T")
+            WindUI:Notify({ Title = "Copiado", Content = "Link do Discord copiado!", Icon = "copy", Duration = 3 })
+        end
+    end,
+})
+CreditsTab:Paragraph({ Title = "Executor", Desc = "Delta" })
+CreditsTab:Section({ Title = "versao do Hub V1" })
+CreditsTab:Paragraph({ Title = "Criadores", Desc = "Vt" })
+
+local MusicTab = Window:Tab({ Title = "Música", Icon = "music" })
+
+local savedSongs = {
+    ["ANTARES"] = "79075022796596",
+    ["Quem tá passando é o trem"] = "137828639403630",
+    ["MONTAGEM AI"] = "135958179501280",
+    ["Ce Ta Nervosa"] = "81744758291664",
+    ["paris"] = "93483751210667",
+    ["Sópra"] = "106952008398119",
+    ["GRWM"] = "108306423679517",
+    ["EU APLICO O CHA"] = "86866545861125",
+    ["Pé Direito"] = "127870629973068",
+}
+
+local songNames = {}
+for name in pairs(savedSongs) do table.insert(songNames, name) end
+
+local function getBoomboxEquipada()
+    local char = LP.Character
+    local boombox = char and char:FindFirstChild("Boombox")
+    return (boombox and boombox:IsA("Tool")) and boombox or nil
+end
+
+local function playMusic(soundId)
+    soundId = tostring(soundId)
+    if not tonumber(soundId) then return false, "ID inválido" end
+
+    local boombox = getBoomboxEquipada()
+    if not boombox then return false, "Equipe a Boombox na mão primeiro!" end
+
+    local sound = boombox:FindFirstChildWhichIsA("Sound", true)
+    if sound then
+        sound.SoundId = "rbxassetid://" .. soundId
+        sound.Looped = true
+        sound.Volume = 1
+        sound:Play()
+    end
+
+    local RE = game:GetService("ReplicatedStorage"):FindFirstChild("RE")
+    local remote = RE and RE:FindFirstChild("PlayerToolEvent")
+    if remote then
+        pcall(function() remote:FireServer("ToolMusicText", soundId, nil, true) end)
+        return true, nil
+    end
+    return false, "Remote PlayerToolEvent não encontrado."
+end
+
+MusicTab:Dropdown({
+    Title = "Catálogo de Músicas",
+    Desc = "Escolha uma música para tocar.",
+    Values = songNames,
+    Callback = function(Option)
+        local id = savedSongs[Option]
+        if id then
+            local ok, err = playMusic(id)
+            WindUI:Notify({
+                Title = ok and "Música" or "Erro",
+                Content = ok and ("Tocando " .. Option .. " na Boombox!") or err,
+                Icon = ok and "music" or "x",
+                Duration = 3
+            })
+        end
+    end,
+})
+
+MusicTab:Section({ Title = "Controle" })
+local AudioIdInput = MusicTab:Input({ Title = "ID Customizado", Value = "", Placeholder = "Ex: 1837879082" })
+
+MusicTab:Button({
+    Title = "Tocar ID Customizado",
+    Callback = function()
+        local id = AudioIdInput.Value
+        if id and id ~= "" then
+            local ok, err = playMusic(id)
+            if not ok then WindUI:Notify({ Title = "Erro", Content = err, Icon = "x", Duration = 4 }) end
+        end
+    end,
+})
+
+MusicTab:Button({
+    Title = "Pausar Música",
+    Callback = function()
+        local boombox = getBoomboxEquipada()
+        if boombox then
+            local sound = boombox:FindFirstChildWhichIsA("Sound", true)
+            if sound then sound:Stop() end
+            local RE = game:GetService("ReplicatedStorage"):FindFirstChild("RE")
+            local remote = RE and RE:FindFirstChild("PlayerToolEvent")
+            if remote then pcall(function() remote:FireServer("ToolMusicText", "", nil, true) end) end
+        else
+            WindUI:Notify({ Title = "Erro", Content = "Equipe a Boombox na mão!", Icon = "x", Duration = 4 })
+        end
+    end,
+})
+
+local SecurityTab = Window:Tab({ Title = "Segurança", Icon = "shield" })
+SecurityTab:Toggle({
+    Title = "Anti Sit (Bloqueio Total)",
+    Desc = "Impede que qualquer script ou tool te sente.",
+    Value = false,
+    Callback = function(Value)
+        antiSitEnabled = Value
+        WindUI:Notify({
+            Title = "Segurança",
+            Content = Value and "Anti Sit BLINDADO ATIVADO." or "Anti Sit DESATIVADO.",
+            Icon = Value and "shield" or "shield-off",
+            Duration = 3
+        })
+    end,
+})
+
+Window:SelectTab(1)
+
+-- ─── WINDUI ADMIN DO ZERO (SÓ PARA ADMIN) ────────────────────
+if isLocalAdminOrOwner() then
+    WindUI:Notify({
+        Title = "Admin",
+        Content = "permissão admin concedida",
+        Icon = "shield-check",
+        Duration = 5
+    })
+
+    local AdminUI = loadstring(game:HttpGet("https://github.com/Footagesus/WindUI/releases/latest/download/main.lua"))()
+
+    local AdminWin = AdminUI:CreateWindow({
+        Title = "Brocasitx Admin",
+        Icon = "skull",
+        Folder = "BrocasitxAdminZero",
+        Size = UDim2.fromOffset(480, 360),
+        Transparent = true,
+        Theme = "Dark",
+    })
+
+    local AdminMainTab = AdminWin:Tab({ Title = "Admin", Icon = "shield-alert" })
+    local playersInMap, playerMapNames = {}, {}
+    local selectedTarget = nil
+
+    local function getListaJogadores()
+        local mapa, nomes = {}, {}
+        for _, p in ipairs(Players:GetPlayers()) do
+            if p ~= LP then
+                mapa[p.Name] = p
+                table.insert(nomes, p.Name)
+            end
+        end
+        table.sort(nomes)
+        return mapa, nomes
+    end
+
+    playersInMap, playerMapNames = getListaJogadores()
+
+    local TargetDropdown = AdminMainTab:Dropdown({
+        Title = "Escolher Alvo",
+        Values = playerMapNames,
+        Callback = function(opt) selectedTarget = playersInMap[opt] end,
+    })
+
+    AdminMainTab:Button({
+        Title = "Atualizar Lista",
+        Callback = function()
+            playersInMap, playerMapNames = getListaJogadores()
+            if selectedTarget and not playersInMap[selectedTarget.Name] then
+                selectedTarget = nil
+          
